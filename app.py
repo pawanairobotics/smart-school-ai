@@ -1,45 +1,37 @@
 import streamlit as st
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 
-# Google Sheet का Public URL (इसे अपनी Sheet ID से बदलें)
-SHEET_ID = "1--lnxYLF1ftOmmD0Neb5nitQjaxgWv7C5eRXQaPvxNs" 
-SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1"
+# 1. Google Sheet से कनेक्ट करें
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-st.set_page_config(page_title="Smart Exam Portal", layout="centered")
 st.title("🎓 Smart School Exam Portal")
+role = st.sidebar.radio("Login:", ["Student", "Teacher"])
 
-# डेटा लोड करने का फंक्शन
-@st.cache_data(ttl=60)
-def load_data():
-    return pd.read_csv(SHEET_URL)
-
-try:
-    df = load_data()
+# --- STUDENT SECTION ---
+if role == "Student":
+    # Google Sheet से सवाल पढ़ें (Sheet का नाम 'Questions' रखें)
+    df_questions = conn.read(worksheet="Questions", usecols=[0,1,2,3,4,5], ttl=5)
     
-    st.sidebar.title("Login Panel")
-    role = st.sidebar.radio("Login as:", ["Student"])
-    
-    st.header("Online Examination")
     name = st.text_input("अपना नाम लिखें:")
-    
     if name:
-        user_answers = {}
-        # 4 ऑप्शंस के साथ सवाल डिस्प्ले करें
-        for i, row in df.iterrows():
-            user_answers[i] = st.radio(
-                f"Q{i+1}: {row['Question']}", 
-                [row['Opt1'], row['Opt2'], row['Opt3'], row['Opt4']], 
-                key=i
-            )
+        answers = {}
+        for i, row in df_questions.iterrows():
+            answers[i] = st.radio(f"Q{i+1}: {row['Question']}", [row['Opt1'], row['Opt2'], row['Opt3'], row['Opt4']])
         
         if st.button("Submit Exam"):
-            score = 0
-            for i, row in df.iterrows():
-                if user_answers[i] == row['CorrectAnswer']:
-                    score += 1
+            score = sum(1 for i, row in df_questions.iterrows() if answers[i] == row['CorrectAnswer'])
             
-            st.balloons()
-            st.success(f"बहुत बढ़िया {name}! आपका स्कोर: {score}/{len(df)}")
+            # रिजल्ट को 'Results' नाम की शीट में लिखें
+            new_result = pd.DataFrame([{"Name": name, "Score": score, "Date": str(pd.Timestamp.now())}])
+            existing_results = conn.read(worksheet="Results")
+            updated_results = pd.concat([existing_results, new_result], ignore_index=True)
+            conn.update(worksheet="Results", data=updated_results)
             
-except Exception as e:
-    st.warning("कृपया अपनी Google Sheet ID सही से सेटअप करें।")
+            st.success(f"रिजल्ट सेव हो गया! आपका स्कोर: {score}")
+
+# --- TEACHER SECTION ---
+elif role == "Teacher":
+    st.header("Teacher Dashboard")
+    results = conn.read(worksheet="Results")
+    st.write("सारे बच्चों का रिजल्ट:", results)
