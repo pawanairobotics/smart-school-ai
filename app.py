@@ -1,37 +1,46 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
-# 1. Google Sheet से कनेक्ट करें
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Google Sheet Connection Setup
+# ध्यान दें: इसके लिए आपको बस अपनी JSON फाइल को GitHub पर 'credentials.json' नाम से अपलोड करना होगा
+def connect_sheet():
+    scope = ["https://spreadsheets.google.com/feeds", 'https://www.googleapis.com/auth/spreadsheets', "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+    client = gspread.authorize(creds)
+    return client
 
 st.title("🎓 Smart School Exam Portal")
-role = st.sidebar.radio("Login:", ["Student", "Teacher"])
 
-# --- STUDENT SECTION ---
-if role == "Student":
-    # Google Sheet से सवाल पढ़ें (Sheet का नाम 'Questions' रखें)
-    df_questions = conn.read(worksheet="Questions", usecols=[0,1,2,3,4,5], ttl=5)
+# कनेक्ट करें
+try:
+    client = connect_sheet()
+    sheet_db = client.open("School_Exam_DB") # अपनी Google Sheet का नाम यहाँ लिखें
     
-    name = st.text_input("अपना नाम लिखें:")
-    if name:
-        answers = {}
-        for i, row in df_questions.iterrows():
-            answers[i] = st.radio(f"Q{i+1}: {row['Question']}", [row['Opt1'], row['Opt2'], row['Opt3'], row['Opt4']])
+    role = st.sidebar.radio("Login:", ["Student", "Teacher"])
+    
+    # --- STUDENT PANEL ---
+    if role == "Student":
+        sheet_q = sheet_db.worksheet("Questions")
+        df = pd.DataFrame(sheet_q.get_all_records())
         
-        if st.button("Submit Exam"):
-            score = sum(1 for i, row in df_questions.iterrows() if answers[i] == row['CorrectAnswer'])
+        name = st.text_input("अपना नाम लिखें:")
+        if name:
+            answers = {}
+            for i, row in df.iterrows():
+                answers[i] = st.radio(f"Q{i+1}: {row['Question']}", [row['Opt1'], row['Opt2'], row['Opt3'], row['Opt4']])
             
-            # रिजल्ट को 'Results' नाम की शीट में लिखें
-            new_result = pd.DataFrame([{"Name": name, "Score": score, "Date": str(pd.Timestamp.now())}])
-            existing_results = conn.read(worksheet="Results")
-            updated_results = pd.concat([existing_results, new_result], ignore_index=True)
-            conn.update(worksheet="Results", data=updated_results)
-            
-            st.success(f"रिजल्ट सेव हो गया! आपका स्कोर: {score}")
+            if st.button("Submit Exam"):
+                score = sum(1 for i, row in df.iterrows() if answers[i] == row['CorrectAnswer'])
+                sheet_r = sheet_db.worksheet("Results")
+                sheet_r.append_row([name, score, str(pd.Timestamp.now())])
+                st.success(f"Result save ho gaya! Score: {score}")
 
-# --- TEACHER SECTION ---
-elif role == "Teacher":
-    st.header("Teacher Dashboard")
-    results = conn.read(worksheet="Results")
-    st.write("सारे बच्चों का रिजल्ट:", results)
+    # --- TEACHER PANEL ---
+    elif role == "Teacher":
+        sheet_r = sheet_db.worksheet("Results")
+        st.write("सारे बच्चों का रिजल्ट:", pd.DataFrame(sheet_r.get_all_records()))
+
+except Exception as e:
+    st.error("कनेक्शन में दिक्कत है। सुनिश्चित करें कि 'credentials.json' फाइल GitHub पर मौजूद है।")
