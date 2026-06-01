@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # Google Sheet का Public URL (इसे अपनी Sheet ID से बदलें)
-SHEET_ID = "YOUR_GOOGLE_SHEET_ID_HERE" 
+SHEET_ID = "1--lnxYLF1ftOmmD0Neb5nitQjaxgWv7C5eRXQaPvxNs" 
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1"
 
 st.set_page_config(page_title="Smart Exam Portal", layout="centered")
